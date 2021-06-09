@@ -583,6 +583,8 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
     if curve_type + '_type' not in curve or \
             curve[curve_type + '_type'] == 'piecewise':
         cleaned_values = list()
+        if p_max == 0 and p_min == 0:  # cannot generate but is in_service
+            return [(0,0)]
         last_slope = None
         for (o1, c1), (o2, c2) in zip(values, values[1:]):
             if o2 <= p_min or math.isclose(p_min, o2):
