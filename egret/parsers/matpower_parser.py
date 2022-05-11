@@ -122,7 +122,7 @@ def create_model_data_dict(matpower_filename):
                 # we expect the case name defined in the file to
                 # be the same as the filename (to eliminate
                 # confusion and potentially loading the wrong file)
-                assert(case_name == tokens[3] and "We expect the case name in the file to match the filename itself.")
+                #assert(case_name == tokens[3] and "We expect the case name in the file to match the filename itself.")
                 system["model_name"] = case_name
 
             elif tokens[0] == 'mpc.version':
@@ -223,19 +223,21 @@ def create_model_data_dict(matpower_filename):
                 QD = float(tokens[3])
                 GS = float(tokens[4])
                 BS = float(tokens[5])
-                BUS_AREA = float(tokens[6])
+                BUS_AREA = int(tokens[6])
                 VM = float(tokens[7])
                 VA = float(tokens[8])
                 BASE_KV = float(tokens[9])
-                ZONE = float(tokens[10])
+                ZONE = int(tokens[10])
                 VMAX = float(tokens[11])
                 VMIN = float(tokens[12])
 
                 bus_dict = {}
                 load_dict = {}
                 shunt_dict = {}
-                if BUS_TYPE < 1 or BUS_TYPE > 3:
+                if BUS_TYPE < 1 or BUS_TYPE > 4:
                     raise ValueError("Encountered an unsupported bus type: {} when parsing MATPOWER input file".format(BUS_TYPE))
+                if BUS_TYPE == 4:
+                    continue;
 
                 # TODO: decide if these are the names we want to use
                 # and document them somewhere

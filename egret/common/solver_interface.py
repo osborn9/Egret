@@ -156,8 +156,8 @@ def _solve_model(model,
                               symbolic_solver_labels=symbolic_solver_labels, load_solutions=False,
                               **solve_method_options)
 
-    if results.solver.termination_condition not in safe_termination_conditions:
-        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
+    #if results.solver.termination_condition not in safe_termination_conditions:
+    #    raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
 
     if isinstance(solver, PersistentSolver):
         solver.load_vars(vars_to_load)
