@@ -236,8 +236,6 @@ def create_model_data_dict(matpower_filename):
                 shunt_dict = {}
                 if BUS_TYPE < 1 or BUS_TYPE > 4:
                     raise ValueError("Encountered an unsupported bus type: {} when parsing MATPOWER input file".format(BUS_TYPE))
-                if BUS_TYPE == 4:
-                    continue;
 
                 # TODO: decide if these are the names we want to use
                 # and document them somewhere
