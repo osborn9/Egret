@@ -23,8 +23,8 @@ jobs:
         strategy:
             matrix:
                 os: [ubuntu-latest]
-                python-version: [3.7]
-                pyomo-version: [6.1.2]
+                python-version: [3.9]
+                pyomo-version: [6.4.0]
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -38,38 +38,21 @@ jobs:
               conda list
           - name: Install CBC
             run: |
-              if [ ${{ matrix.os }} = windows-latest ]
-              then
-                # download CBC binary, copy to place already in PATH
-                curl -O https://ampl.com/dl/open/cbc/cbc-win64.zip
-                unzip cbc-win64.zip
-                cp cbc.exe $CONDA_PREFIX
-              else
-                conda install -c conda-forge coincbc
-              fi
+              conda install -c conda-forge coincbc
               # test cbc executable
               cbc -quit
-          - name: Install Nose/Parameterized/Pytest
-            run: |
-              pip install nose parameterized pytest coveralls
-          - name: Install Cython/Numpy/Pandas
-            run: |
-              pip install cython numpy pandas
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
-          - name: Install Coramin
-            run: |
-              pip install coramin
           - name: Install EGRET
             run: |
-              python setup.py develop
+              pip install -e .
           - name: Install Prescient
             run: |
               cd ..
               git clone --depth=1 https://github.com/grid-parity-exchange/Prescient.git
               cd Prescient
-              python setup.py develop
+              pip install -e .
           - name: Run Prescient Tests
             run: |
               cd ../Prescient
