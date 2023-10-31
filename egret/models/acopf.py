@@ -27,11 +27,12 @@ from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
 from pyomo.contrib.fbbt import interval
+from pyomo.opt import SolverFactory
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
                                p_marginal_slack_penalty, q_marginal_slack_penalty):
-    
+
     import egret.model_library.decl as decl
 
     p_over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_max'])) for k in bus_names}
@@ -75,7 +76,7 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
     else:
         out_of_service_gens = list()
         out_of_service_branches = list()
-                
+
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace=True)
 
@@ -107,12 +108,19 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
 
     ### declare the fixed shunts at the buses
     bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
-
+    # SVO - alter min / max if outside bounds
+    init_val={k: v**2 for k, v in bus_attrs['vm'].items()}
+    min_val={k: v**2 for k, v in bus_attrs['v_min'].items()}
+    max_val={k: v**2 for k, v in bus_attrs['v_max'].items()}
+    for key, val in init_val.items():
+      if val < min_val[key]:
+        min_val[key] = val
+      if val > max_val[key]:
+        max_val[key] = val
     libbus.declare_var_vmsq(model=model,
                             index_set=bus_attrs['names'],
-                            initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
-                            bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
-                                             {k: v**2 for k, v in bus_attrs['v_max'].items()}))
+                            initialize=init_val,
+                            bounds=zip_items(min_val, max_val))
 
     branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
 
@@ -160,11 +168,18 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
     libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
                           bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
                           )
+    # SVO
+    #libgen.declare_var_pg(model, gen_attrs['names'], initialize=gen_attrs['pg'],
+    #                      bounds=zip_items(gen_attrs['pg'], gen_attrs['pg'])
+    #                      )
 
     qg_init = {k: (gen_attrs['q_min'][k] + gen_attrs['q_max'][k]) / 2.0 for k in gen_attrs['qg']}
     libgen.declare_var_qg(model, gen_attrs['names'], initialize=qg_init,
                           bounds=zip_items(gen_attrs['q_min'], gen_attrs['q_max'])
                           )
+    #libgen.declare_var_qg(model, gen_attrs['names'], initialize=gen_attrs['qg'],
+    #                      bounds=zip_items(gen_attrs['qg'], gen_attrs['qg'])
+    #                      )
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
@@ -201,21 +216,49 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
         qf_init[branch_name] = tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
         qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
 
+    # SVO - alter min / max if outside bounds
+    for key, val in pf_init.items():
+      if pf_bounds[key] != (None, None):
+          if val < pf_bounds[key][0]:
+            pf_bounds[key] = (val, pf_bounds[key][1])
+          if val > pf_bounds[key][1]:
+            pf_bounds[key] = (pf_bounds[key][0], val)
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
                              initialize=pf_init,
                              bounds=pf_bounds
                              )
+    # SVO - alter min / max if outside bounds
+    for key, val in pt_init.items():
+      if pt_bounds[key] != (None, None):
+          if val < pt_bounds[key][0]:
+            pt_bounds[key] = (val, pt_bounds[key][1])
+          if val > pt_bounds[key][1]:
+            pt_bounds[key] = (pt_bounds[key][0], val)
     libbranch.declare_var_pt(model=model,
                              index_set=branch_attrs['names'],
                              initialize=pt_init,
                              bounds=pt_bounds
                              )
+    # SVO - alter min / max if outside bounds
+    for key, val in qf_init.items():
+      if qf_bounds[key] != (None, None):
+          if val < qf_bounds[key][0]:
+            qf_bounds[key] = (val, qf_bounds[key][1])
+          if val > qf_bounds[key][1]:
+            qf_bounds[key] = (qf_bounds[key][0], val)
     libbranch.declare_var_qf(model=model,
                              index_set=branch_attrs['names'],
                              initialize=qf_init,
                              bounds=qf_bounds
                              )
+    # SVO - alter min / max if outside bounds
+    for key, val in qt_init.items():
+      if qt_bounds[key] != (None, None):
+          if val < qt_bounds[key][0]:
+            qt_bounds[key] = (val, qt_bounds[key][1])
+          if val > qt_bounds[key][1]:
+            qt_bounds[key] = (qt_bounds[key][0], val)
     libbranch.declare_var_qt(model=model,
                              index_set=branch_attrs['names'],
                              initialize=qt_init,
@@ -428,10 +471,19 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_
                               index_set=unique_bus_pairs,
                               initialize=0,
                               bounds=(-pi/2, pi/2))
+    # SVO - alter min / max if outside bounds
+    init_val=bus_attrs['vm']
+    min_val=bus_attrs['v_min']
+    max_val=bus_attrs['v_max']
+    for key, val in init_val.items():
+      if val < min_val[key]:
+        min_val[key] = val
+      if val > max_val[key]:
+        max_val[key] = val
     libbus.declare_var_vm(model,
                           bus_attrs['names'],
-                          initialize=bus_attrs['vm'],
-                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max']))
+                          initialize=init_val,
+                          bounds=zip_items(min_val, max_val))
 
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
     libbus.declare_var_va(model,
@@ -567,15 +619,23 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_
         model.vr[ref_bus].setlb(0.0)
 
     ### declare the generator real and reactive power
+    # SVO
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
     libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
                           bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
                           )
+    #libgen.declare_var_pg(model, gen_attrs['names'], initialize=gen_attrs['pg'],
+    #                      bounds=zip_items(gen_attrs['pg'], gen_attrs['pg'])
+    #                      )
 
     qg_init = {k: (gen_attrs['q_min'][k] + gen_attrs['q_max'][k]) / 2.0 for k in gen_attrs['qg']}
     libgen.declare_var_qg(model, gen_attrs['names'], initialize=qg_init,
                           bounds=zip_items(gen_attrs['q_min'], gen_attrs['q_max'])
                           )
+    #libgen.declare_var_qg(model, gen_attrs['names'], initialize=gen_attrs['qg'],
+    #                      bounds=zip_items(gen_attrs['qg'], gen_attrs['qg'])
+    #                      )
+
 
     ### declare the current flows in the branches
     branch_currents = tx_utils.dict_of_branch_currents(branches, buses)
@@ -790,8 +850,10 @@ def solve_acopf(model_data,
     m, md = acopf_model_generator(model_data, **kwargs)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+    opt = SolverFactory('ipopt')
+    opt.options['linear_solver'] = 'ma27'
 
-    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+    m, results = _solve_model(m,opt,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,solver_options=options)
 
     # save results data to ModelData object

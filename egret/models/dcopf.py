@@ -99,7 +99,7 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)        
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)
         p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'], bus_p_loads,
                                                                 gens_by_bus, gen_attrs, p_marginal_slack_penalty)
 
@@ -252,7 +252,7 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
             model.ineq_angle_diff_branch_lb[branch_name].deactivate()
             model.ineq_angle_diff_branch_ub[branch_name].deactivate()
         model_data.data['elements']['branch'][branch_name]['in_service'] = False
-        md.data['elements']['branch'][branch_name]['in_service'] = False        
+        md.data['elements']['branch'][branch_name]['in_service'] = False
 
     return model, md
 
@@ -262,7 +262,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
 
     baseMVA = model_data.data['system']['baseMVA']
     lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)
-    
+
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -304,7 +304,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)
         p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     if dc_branches:
@@ -344,7 +344,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                               dc_inlet_branches_by_bus=dc_inlet_branches_by_bus,
                                               dc_outlet_branches_by_bus=dc_outlet_branches_by_bus,
                                               )
-    
+
     ### add "blank" power flow expressions
     libbranch.declare_expr_pf(model=model,
                               index_set=branches_idx,
@@ -579,6 +579,7 @@ def solve_dcopf(model_data,
     if dcopf_model_generator == create_ptdf_dcopf_model:
         if hasattr(m, 'p_load_shed'):
             md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
+
         buses_idx = PTDF.buses_keys
         LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
         for i,b in enumerate(buses_idx):
@@ -589,7 +590,9 @@ def solve_dcopf(model_data,
     else:
         for b,b_dict in buses.items():
             if hasattr(m, 'p_load_shed'):
-                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
+              b_dict['p_load_shed'] = value(m.p_load_shed[b])
+              b_dict['p_over_generation'] = value(m.p_over_generation[b])
+              b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
             b_dict['pl'] = value(m.pl[b])
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
